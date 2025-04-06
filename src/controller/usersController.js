@@ -5,54 +5,73 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-//Create a User
+// Create User con validación de rol
 export const createUser = async (req, res) => {
     try {
-        const { password, username, phone } = req.body;
+        const { password, username, phone, role } = req.body;
 
+        // Validación de campos obligatorios
         if (!phone || !username || !password) {
-            return res.status(400).json({ message: 'Teléfono, correo y contraseña son obligatorios' });
+            return res.status(400).json({ message: 'Teléfono, usuario y contraseña son obligatorios' });
         }
- 
+
+        // Validación de formato de correo
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(username)) {
             return res.status(400).json({ message: 'Formato de correo inválido' });
         }
 
+        // Validación de rol
+        if (role && !['cliente', 'administrador'].includes(role)) {
+            return res.status(400).json({ message: 'Rol inválido' });
+        }
+
+        // Validación de contraseña
         if (password.length < 8) {
             return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
         }
 
-        const existingPhone = await User.findOne({ where: { phone } });
-        if (existingPhone) {
-            return res.status(400).json({ message: 'El teléfono ya existe' });
-        }
-        
+        // Validación de teléfono
         if (phone.length !== 10) {
             return res.status(400).json({ message: 'El teléfono debe tener exactamente 10 dígitos' });
         }
 
-        const existingUser = await User.findOne({ where: { username } });
-        if (existingUser) {
-            return res.status(400).json({ message: 'El nombre de usuario ya existe' });
+        // Verificar existencia de teléfono
+        const existingPhone = await User.findOne({ where: { phone } });
+        if (existingPhone) {
+            return res.status(400).json({ message: 'El teléfono ya existe' });
         }
 
-        // Create a user
+        // Verificar existencia de usuario
+        const existingUser = await User.findOne({ where: { username } });
+        if (existingUser) {
+            return res.status(400).json({ message: 'El usuario ya existe' });
+        }
+
+        // Crear usuario con rol
         const newUser = await User.create({
             phone,
             username,
             password,
+            role: role || 'cliente', // Usar valor por defecto si no se provee
             status: true,
             creationDate: new Date(),
         });
 
-        console.log(newUser);
         await userCreatedEvent(newUser);
-        return res.status(201).json({ message: 'Usuario Creado', data: newUser });
+        return res.status(201).json({ 
+            message: 'Usuario creado', 
+            data: {
+                id: newUser.id,
+                username: newUser.username,
+                role: newUser.role,
+                creationDate: newUser.creationDate
+            }
+        });
 
     } catch (error) {
         console.error('Error al crear usuario: ', error);
-        return res.status(500).json({ message: 'Error al crear el usuario' });
+        return res.status(500).json({ message: 'Error interno del servidor' });
     }
 };
 
@@ -68,9 +87,9 @@ export const getUser = async(req, res) => {
 };
 
 //Update users 
-export const updateUser = async(req, res) => {
+export const updateUser = async (req, res) => {
     const { id } = req.params;
-    const { password, phone } = req.body;
+    const { password, phone, role } = req.body;
 
     try {
         const user = await User.findByPk(id);
@@ -79,26 +98,32 @@ export const updateUser = async(req, res) => {
             return res.status(404).json({ message: 'Usuario no encontrado' });
         }
 
-        if (password.length < 8) {
+        if (password && password.length < 8) {
             return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
         }
 
-        if (phone.length !== 10) {
-            return res.status(400).json({ message: 'El teléfono debe tener exactamente 10 dígitos' });
+        if (phone) {
+            if (phone.length !== 10) {
+                return res.status(400).json({ message: 'El teléfono debe tener exactamente 10 dígitos' });
+            }
+
+            const existingPhone = await User.findOne({ where: { phone } });
+            if (existingPhone && existingPhone.id !== user.id) {
+                return res.status(400).json({ message: 'El teléfono ya está en uso por otro usuario' });
+            }
         }
 
-        const existingPhone = await User.findOne({ where: { phone } });
-        if (existingPhone) {
-            return res.status(400).json({ message: 'El telefono ya existe' });
+        if (role && !['cliente', 'administrador'].includes(role)) {
+            return res.status(400).json({ message: 'Rol inválido. Debe ser "cliente" o "administrador"' });
         }
 
-        
         await user.update({
-            phone : phone || user.phone,
-            password : password || user.password,
+            phone: phone || user.phone,
+            password: password || user.password,
+            role: role || user.role,
         });
 
-        return res.status(200).json({ message: 'Usuario actualizado', data: user});
+        return res.status(200).json({ message: 'Usuario actualizado', data: user });
 
     } catch (error) {
         console.error('Error al actualizar los datos: ', error);
